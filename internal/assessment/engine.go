@@ -47,6 +47,14 @@ func (e *Engine) Snapshot(taskID string, zones []domain.BladeZone, observations 
 func (e *Engine) SnapshotChecked(taskID string, zones []domain.BladeZone, observations []domain.DroneObservation, wind float64) (domain.AssessmentSnapshot, error) {
 	byID := make(map[string]domain.BladeZone)
 	for _, z := range zones {
+		// A frozen boundary must resolve each observation to a single,
+		// unambiguous zone. Duplicate zone identifiers would otherwise let the
+		// last zone silently override the others' thresholds and produce risk
+		// results inconsistent with the frozen boundary, so refuse to evaluate
+		// rather than silently picking one.
+		if _, ok := byID[z.ID]; ok {
+			return domain.AssessmentSnapshot{}, fmt.Errorf("分区标识符 %s 重复，无法确定运行边界", z.ID)
+		}
 		byID[z.ID] = z
 	}
 	s := domain.AssessmentSnapshot{TaskID: taskID, RuleVersion: RuleVersion, HighestLevel: "low", CreatedAt: time.Now().UTC()}

@@ -67,6 +67,7 @@ func ValidateBoundarySet(bladeCount int, zones []BladeZone) error {
 	}
 	blades := make(map[int]bool)
 	keys := make(map[string]bool)
+	ids := make(map[string]bool)
 	for _, z := range zones {
 		if err := z.Validate(bladeCount); err != nil {
 			return err
@@ -75,7 +76,18 @@ func ValidateBoundarySet(bladeCount int, zones []BladeZone) error {
 		if keys[key] {
 			return ValidationError{"zones", "同一叶片的分区代码不能重复"}
 		}
-		keys[key], blades[z.BladeIndex] = true, true
+		keys[key] = true
+		// A frozen boundary must reference each zone by a stable, unambiguous
+		// identifier so observations cannot resolve to the wrong thresholds.
+		// Empty identifiers are assigned later by the registration flow and are
+		// therefore excluded from the uniqueness check.
+		if z.ID != "" {
+			if ids[z.ID] {
+				return ValidationError{"zones", "分区标识符不能重复"}
+			}
+			ids[z.ID] = true
+		}
+		blades[z.BladeIndex] = true
 	}
 	for blade := 1; blade <= bladeCount; blade++ {
 		if !blades[blade] {
