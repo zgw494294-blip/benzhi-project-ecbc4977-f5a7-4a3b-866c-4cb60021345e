@@ -78,6 +78,17 @@ func (s *Service) cachedTaskList(ctx context.Context) ([]domain.InspectionTask, 
 	s.listMu.Unlock()
 	return result, nil
 }
+
+// invalidateListCache drops the cached task list so the next read rebuilds it
+// from the persisted aggregate. It is called after any successful write so
+// callers of GET /api/tasks observe the latest status and version instead of
+// stale draft state that could make them believe a task is still editable.
+func (s *Service) invalidateListCache() {
+	s.listMu.Lock()
+	s.listCache = nil
+	s.listCached = false
+	s.listMu.Unlock()
+}
 func (s *Service) Get(ctx context.Context, id string) (store.TaskBundle, error) {
 	return s.repo.LoadTask(ctx, id)
 }
@@ -114,7 +125,11 @@ func (s *Service) CreateTask(ctx context.Context, r CreateTaskRequest) (store.Ta
 		return b, err
 	}
 	_, err = s.repo.CreateTask(ctx, *t, e, r.IdempotencyKey, response(b))
-	return b, err
+	if err != nil {
+		return b, err
+	}
+	s.invalidateListCache()
+	return b, nil
 }
 
 func loadForWrite(ctx context.Context, repo store.Repository, id string, expected int64) (store.TaskBundle, error) {
@@ -127,9 +142,9 @@ func loadForWrite(ctx context.Context, repo store.Repository, id string, expecte
 	}
 	return b, nil
 }
-func save(ctx context.Context, repo store.Repository, b store.TaskBundle, e domain.Event, key string) (store.TaskBundle, error) {
+func (s *Service) save(ctx context.Context, b store.TaskBundle, e domain.Event, key string) (store.TaskBundle, error) {
 	raw := response(b)
-	cached, err := repo.SaveBundle(ctx, b, e, key, raw)
+	cached, err := s.repo.SaveBundle(ctx, b, e, key, raw)
 	if err != nil {
 		return store.TaskBundle{}, err
 	}
@@ -137,6 +152,7 @@ func save(ctx context.Context, repo store.Repository, b store.TaskBundle, e doma
 	if err = json.Unmarshal(cached, &result); err != nil {
 		return store.TaskBundle{}, err
 	}
+	s.invalidateListCache()
 	return result, nil
 }
 
@@ -180,7 +196,7 @@ func (s *Service) SetZones(ctx context.Context, id string, r SetZonesRequest) (s
 		return b, err
 	}
 	e, _ := event(id, "zones.frozen", r.Actor, b.Task.Version, map[string]any{"zones": r.Zones, "boundary_digest": b.BoundaryDigest, "coverage": b.ZoneCoverage, "frozen_at": b.BoundaryFrozenAt})
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
 
 func (s *Service) AddObservation(ctx context.Context, id string, r AddObservationRequest) (store.TaskBundle, error) {
@@ -219,5 +235,5 @@ func (s *Service) AddObservation(ctx context.Context, id string, r AddObservatio
 	}
 	b.Task.Version++
 	e, _ := event(id, "observation.added", r.Actor, b.Task.Version, o)
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }

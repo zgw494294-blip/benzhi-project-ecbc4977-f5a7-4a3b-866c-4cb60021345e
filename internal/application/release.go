@@ -62,7 +62,7 @@ func (s *Service) Release(ctx context.Context, id string, r ReleaseRequest) (sto
 		return b, err
 	}
 	e, _ := event(id, "release.issued", r.Reviewer, b.Task.Version, c)
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
 
 func RiskSummary(b store.TaskBundle) string {

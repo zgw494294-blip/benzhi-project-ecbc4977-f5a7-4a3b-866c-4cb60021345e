@@ -40,7 +40,7 @@ func (s *Service) Assess(ctx context.Context, id string, r AssessRequest) (store
 		return b, err
 	}
 	e, _ := event(id, "risk.assessed", r.Actor, b.Task.Version, snapshot)
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
 
 func (s *Service) FreezeRepairPlan(ctx context.Context, id string, r FreezeRepairPlanRequest) (store.TaskBundle, error) {
@@ -80,7 +80,7 @@ func (s *Service) FreezeRepairPlan(ctx context.Context, id string, r FreezeRepai
 		return b, err
 	}
 	e, _ := event(id, "repair_plan.frozen", r.Actor, b.Task.Version, r.Actions)
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
 
 func (s *Service) AddRetests(ctx context.Context, id string, r AddRetestsRequest) (store.TaskBundle, error) {
@@ -141,7 +141,7 @@ func (s *Service) AddRetests(ctx context.Context, id string, r AddRetestsRequest
 		b.Task.Version++
 	}
 	e, _ := event(id, "retests.recorded", r.Actor, b.Task.Version, map[string]any{"readings": r.Readings, "deviations": b.Deviations})
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
 
 func (s *Service) CloseDeviation(ctx context.Context, id, deviationID string, r CloseDeviationRequest) (store.TaskBundle, error) {
@@ -179,7 +179,7 @@ func (s *Service) CloseDeviation(ctx context.Context, id, deviationID string, r 
 	}
 	b.Task.Version++
 	e, _ := event(id, "deviation.closed", r.Actor, b.Task.Version, map[string]string{"deviation_id": deviationID, "action": r.CorrectiveAction})
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
 
 func mergeDeviations(existing, detected []domain.Deviation) []domain.Deviation {
@@ -248,5 +248,5 @@ func (s *Service) PrepareReview(ctx context.Context, id string, r PrepareReviewR
 		return b, err
 	}
 	e, _ := event(id, "safety_review.prepared", r.Actor, b.Task.Version, map[string]int{"retests": len(b.Retests)})
-	return save(ctx, s.repo, b, e, r.IdempotencyKey)
+	return s.save(ctx, b, e, r.IdempotencyKey)
 }
