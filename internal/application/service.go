@@ -61,7 +61,7 @@ func (s *Service) Get(ctx context.Context, id string) (store.TaskBundle, error) 
 	b, ok := s.released[id]
 	s.cacheMu.RUnlock()
 	if ok {
-		return b, nil
+		return cloneBundle(b), nil
 	}
 	b, err := s.repo.LoadTask(ctx, id)
 	if err != nil {
@@ -71,8 +71,29 @@ func (s *Service) Get(ctx context.Context, id string) (store.TaskBundle, error) 
 		s.cacheMu.Lock()
 		s.released[id] = b
 		s.cacheMu.Unlock()
+		return cloneBundle(b), nil
 	}
 	return b, nil
+}
+
+// cloneBundle produces a deep, independent copy of a TaskBundle so that callers
+// mutating any returned slice, map or pointer-referenced field (Zones,
+// Observations, Assessment.Results/RuleHits/ZoneSummaries, RepairPlan, Retests,
+// Deviations, Credential, ZoneCoverage, ...) can never reach into the in-memory
+// released cache. The cached snapshot is the single source of truth for an
+// already released task and must remain immutable across requests; the JSON
+// round-trip mirrors the existing serialization path used by SaveBundle and
+// LoadTask and covers every mutable reference type without enumerating them.
+func cloneBundle(b store.TaskBundle) store.TaskBundle {
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return b
+	}
+	var copy store.TaskBundle
+	if err = json.Unmarshal(raw, &copy); err != nil {
+		return b
+	}
+	return copy
 }
 func (s *Service) Audit(ctx context.Context, id string) ([]domain.Event, error) {
 	return s.repo.Events(ctx, id)
