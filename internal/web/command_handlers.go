@@ -2,7 +2,6 @@ package web
 
 import (
 	"bladeready/internal/application"
-	"context"
 	"net/http"
 )
 
@@ -14,7 +13,7 @@ func (s *Server) CreateTaskHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.CreatedBy = actor(r, q.CreatedBy)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.CreateTask(context.WithoutCancel(r.Context()), q)
+	b, err := s.app.CreateTask(r.Context(), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -29,7 +28,7 @@ func (s *Server) SetZonesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.SetZones(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.SetZones(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -44,7 +43,7 @@ func (s *Server) AddObservationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.AddObservation(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.AddObservation(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -59,7 +58,7 @@ func (s *Server) AssessHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.Assess(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.Assess(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -74,7 +73,7 @@ func (s *Server) RepairPlanHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.FreezeRepairPlan(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.FreezeRepairPlan(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -89,7 +88,7 @@ func (s *Server) RetestsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.AddRetests(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.AddRetests(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -104,7 +103,7 @@ func (s *Server) CloseDeviationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.CloseDeviation(context.WithoutCancel(r.Context()), r.PathValue("id"), r.PathValue("deviationID"), q)
+	b, err := s.app.CloseDeviation(r.Context(), r.PathValue("id"), r.PathValue("deviationID"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -119,7 +118,7 @@ func (s *Server) PrepareReviewHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Actor = actor(r, q.Actor)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.PrepareReview(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.PrepareReview(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -134,7 +133,7 @@ func (s *Server) ReleaseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Reviewer = actor(r, q.Reviewer)
 	q.IdempotencyKey = idem(r, q.IdempotencyKey)
-	b, err := s.app.Release(context.WithoutCancel(r.Context()), r.PathValue("id"), q)
+	b, err := s.app.Release(r.Context(), r.PathValue("id"), q)
 	if err != nil {
 		writeError(w, err)
 		return
