@@ -11,6 +11,11 @@ import (
 func (s *Service) Assess(ctx context.Context, id string, r AssessRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
@@ -46,6 +51,11 @@ func (s *Service) Assess(ctx context.Context, id string, r AssessRequest) (store
 func (s *Service) FreezeRepairPlan(ctx context.Context, id string, r FreezeRepairPlanRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
@@ -86,6 +96,11 @@ func (s *Service) FreezeRepairPlan(ctx context.Context, id string, r FreezeRepai
 func (s *Service) AddRetests(ctx context.Context, id string, r AddRetestsRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
@@ -147,6 +162,11 @@ func (s *Service) AddRetests(ctx context.Context, id string, r AddRetestsRequest
 func (s *Service) CloseDeviation(ctx context.Context, id, deviationID string, r CloseDeviationRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
@@ -224,6 +244,11 @@ func latestRetest(items []domain.RetestReading, observationID string) (domain.Re
 func (s *Service) PrepareReview(ctx context.Context, id string, r PrepareReviewRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err

@@ -21,6 +21,11 @@ func digest(value any) string {
 func (s *Service) Release(ctx context.Context, id string, r ReleaseRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err

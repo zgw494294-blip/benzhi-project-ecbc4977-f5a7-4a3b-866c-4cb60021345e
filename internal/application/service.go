@@ -56,15 +56,32 @@ func (s *Service) Audit(ctx context.Context, id string) ([]domain.Event, error) 
 	return s.repo.Events(ctx, id)
 }
 
+// idempotentCached returns the first successful response stored for the given
+// idempotency key. Write handlers call this before any version or state check
+// so that a retried write (carrying a now-stale expected_version) still gets
+// back the original success response instead of a version conflict. The store
+// still re-checks the key inside its write transaction to close the race
+// against concurrent attempts that have not yet recorded a response.
+func (s *Service) idempotentCached(ctx context.Context, key string) (store.TaskBundle, bool, error) {
+	if key == "" {
+		return store.TaskBundle{}, false, nil
+	}
+	cached, ok, err := s.repo.Idempotent(ctx, key)
+	if err != nil || !ok {
+		return store.TaskBundle{}, ok, err
+	}
+	var b store.TaskBundle
+	err = json.Unmarshal(cached, &b)
+	return b, err == nil, err
+}
+
 func (s *Service) CreateTask(ctx context.Context, r CreateTaskRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cached, ok, err := s.repo.Idempotent(ctx, r.IdempotencyKey); err != nil {
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
 		return store.TaskBundle{}, err
 	} else if ok {
-		var b store.TaskBundle
-		err = json.Unmarshal(cached, &b)
-		return b, err
+		return b, nil
 	}
 	t, err := domain.NewTask(newID("task"), r.WindFarm, r.TurbineCode, r.BladeCount, r.InspectionWindowStart, r.InspectionWindowEnd, r.CreatedBy)
 	if err != nil {
@@ -114,6 +131,11 @@ func save(ctx context.Context, repo store.Repository, b store.TaskBundle, e doma
 func (s *Service) SetZones(ctx context.Context, id string, r SetZonesRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
@@ -157,6 +179,11 @@ func (s *Service) SetZones(ctx context.Context, id string, r SetZonesRequest) (s
 func (s *Service) AddObservation(ctx context.Context, id string, r AddObservationRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok, err := s.idempotentCached(ctx, r.IdempotencyKey); err != nil {
+		return store.TaskBundle{}, err
+	} else if ok {
+		return b, nil
+	}
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
