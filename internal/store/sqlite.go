@@ -30,6 +30,10 @@ func Open(path string) (*SQLite, error) {
 		db.Close()
 		return nil, fmt.Errorf("执行迁移: %w", err)
 	}
+	if err = s.migrateIdempotency(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("幂等缓存迁移: %w", err)
+	}
 	if err = s.Check(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -53,16 +57,53 @@ func (s *SQLite) Check(ctx context.Context) error {
 	return nil
 }
 
+// Idempotent reports a cached create-scope response for the given key. A
+// create-scope entry has an empty task_id and represents a task creation
+// replay. Task-scoped write replays use IdempotentForTask so a key reused
+// across different tasks cannot surface another task's aggregate.
 func (s *SQLite) Idempotent(ctx context.Context, key string) ([]byte, bool, error) {
 	if key == "" {
 		return nil, false, nil
 	}
 	var response []byte
-	err := s.db.QueryRowContext(ctx, "SELECT response FROM idempotency WHERE key=?", key).Scan(&response)
+	err := s.db.QueryRowContext(ctx, "SELECT response FROM idempotency WHERE key=? AND task_id=''", key).Scan(&response)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
 	return response, err == nil, err
+}
+
+// IdempotentForTask reports a cached response bound to a specific task's write
+// operations. Keys reused on a different task do not match here, so the target
+// task's write proceeds against its own state.
+func (s *SQLite) IdempotentForTask(ctx context.Context, key, taskID string) ([]byte, bool, error) {
+	if key == "" || taskID == "" {
+		return nil, false, nil
+	}
+	var response []byte
+	err := s.db.QueryRowContext(ctx, "SELECT response FROM idempotency WHERE key=? AND task_id=?", key, taskID).Scan(&response)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	return response, err == nil, err
+}
+
+// migrateIdempotency rebuilds the idempotency cache with a per-task scope on
+// databases created before the task_id column existed.
+func (s *SQLite) migrateIdempotency(ctx context.Context) error {
+	var cols int
+	if err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM pragma_table_info('idempotency')").Scan(&cols); err != nil {
+		return err
+	}
+	// The upgraded schema has 4 columns (key, task_id, response, created_at).
+	// Older schemas had 3 columns (key, response, created_at).
+	if cols >= 4 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, migrateIdempotency); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *SQLite) CreateTask(ctx context.Context, task domain.InspectionTask, event domain.Event, key string, response []byte) ([]byte, error) {
@@ -88,7 +129,7 @@ func (s *SQLite) CreateTask(ctx context.Context, task domain.InspectionTask, eve
 		return nil, err
 	}
 	if key != "" {
-		if _, err = tx.ExecContext(ctx, "INSERT INTO idempotency(key,response,created_at) VALUES(?,?,?)", key, response, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO idempotency(key,task_id,response,created_at) VALUES(?,?,?,?)", key, "", response, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 			return nil, err
 		}
 	}
@@ -153,7 +194,7 @@ func (s *SQLite) ListTasksFiltered(ctx context.Context, filter TaskListFilter) (
 }
 
 func (s *SQLite) SaveBundle(ctx context.Context, bundle TaskBundle, event domain.Event, key string, response []byte) ([]byte, error) {
-	if cached, ok, err := s.Idempotent(ctx, key); err != nil || ok {
+	if cached, ok, err := s.IdempotentForTask(ctx, key, bundle.Task.ID); err != nil || ok {
 		return cached, err
 	}
 	raw, err := json.Marshal(bundle)
@@ -186,7 +227,7 @@ func (s *SQLite) SaveBundle(ctx context.Context, bundle TaskBundle, event domain
 		return nil, err
 	}
 	if key != "" {
-		if _, err = tx.ExecContext(ctx, "INSERT INTO idempotency(key,response,created_at) VALUES(?,?,?)", key, response, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO idempotency(key,task_id,response,created_at) VALUES(?,?,?,?)", key, bundle.Task.ID, response, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 			return nil, err
 		}
 	}

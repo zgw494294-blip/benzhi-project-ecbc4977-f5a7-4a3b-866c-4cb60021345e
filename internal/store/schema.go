@@ -28,8 +28,32 @@ BEGIN SELECT RAISE(ABORT, 'release credential is immutable'); END;
 CREATE TRIGGER IF NOT EXISTS credential_no_delete BEFORE DELETE ON credentials
 BEGIN SELECT RAISE(ABORT, 'release credential is immutable'); END;
 CREATE TABLE IF NOT EXISTS idempotency (
- key TEXT PRIMARY KEY, response BLOB NOT NULL, created_at TEXT NOT NULL
+ key TEXT NOT NULL, task_id TEXT NOT NULL DEFAULT '', response BLOB NOT NULL, created_at TEXT NOT NULL,
+ PRIMARY KEY (key, task_id)
 );
 CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(1, CURRENT_TIMESTAMP);
+`
+
+// migrateIdempotency ensures the idempotency cache is scoped per task so a
+// key reused across different tasks cannot return another task's cached
+// aggregate. The idempotency table holds only a short-lived request cache, so
+// rebuilding it during startup on upgraded databases is safe.
+const migrateIdempotency = `
+CREATE TABLE IF NOT EXISTS idempotency_v2 (
+ key TEXT NOT NULL, task_id TEXT NOT NULL DEFAULT '', response BLOB NOT NULL, created_at TEXT NOT NULL,
+ PRIMARY KEY (key, task_id)
+);
+INSERT INTO idempotency_v2(key, task_id, response, created_at)
+ SELECT key, '', response, created_at FROM idempotency WHERE true
+ ON CONFLICT(key, task_id) DO NOTHING;
+DROP TABLE IF EXISTS idempotency;
+CREATE TABLE IF NOT EXISTS idempotency (
+ key TEXT NOT NULL, task_id TEXT NOT NULL DEFAULT '', response BLOB NOT NULL, created_at TEXT NOT NULL,
+ PRIMARY KEY (key, task_id)
+);
+INSERT INTO idempotency(key, task_id, response, created_at)
+ SELECT key, task_id, response, created_at FROM idempotency_v2 WHERE true
+ ON CONFLICT(key, task_id) DO NOTHING;
+DROP TABLE idempotency_v2;
 `
