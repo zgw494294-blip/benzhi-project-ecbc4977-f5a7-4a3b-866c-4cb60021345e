@@ -17,6 +17,9 @@ type Service struct {
 	engine     *assessment.Engine
 	comparator *assessment.Comparator
 	mu         sync.Mutex
+	listMu     sync.RWMutex
+	listCache  []domain.InspectionTask
+	listCached bool
 }
 
 func New(repo store.Repository) *Service {
@@ -39,15 +42,41 @@ func (s *Service) List(ctx context.Context, filters ...store.TaskListFilter) ([]
 	if len(filters) > 0 {
 		return s.ListFiltered(ctx, filters[0])
 	}
-	return s.repo.ListTasks(ctx)
+	return s.cachedTaskList(ctx)
 }
 func (s *Service) ListFiltered(ctx context.Context, filter store.TaskListFilter) ([]domain.InspectionTask, error) {
+	if filter.Status == "" && filter.WindFarm == "" && filter.From == nil && filter.To == nil {
+		return s.cachedTaskList(ctx)
+	}
 	if filtered, ok := s.repo.(interface {
 		ListTasksFiltered(context.Context, store.TaskListFilter) ([]domain.InspectionTask, error)
 	}); ok {
 		return filtered.ListTasksFiltered(ctx, filter)
 	}
 	return s.repo.ListTasks(ctx)
+}
+
+func (s *Service) cachedTaskList(ctx context.Context) ([]domain.InspectionTask, error) {
+	s.listMu.RLock()
+	if s.listCached {
+		items := append([]domain.InspectionTask(nil), s.listCache...)
+		s.listMu.RUnlock()
+		return items, nil
+	}
+	s.listMu.RUnlock()
+
+	items, err := s.repo.ListTasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.listMu.Lock()
+	if !s.listCached {
+		s.listCache = append([]domain.InspectionTask(nil), items...)
+		s.listCached = true
+	}
+	result := append([]domain.InspectionTask(nil), s.listCache...)
+	s.listMu.Unlock()
+	return result, nil
 }
 func (s *Service) Get(ctx context.Context, id string) (store.TaskBundle, error) {
 	return s.repo.LoadTask(ctx, id)
