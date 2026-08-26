@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>风叶巡检复机放行台</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <header><div><p class="eyebrow">BLADE SAFETY CONTROL</p><h1>风叶巡检复机放行台</h1><p>从无人机观测到安全签发，每一次状态变化均可追溯。</p></div><span id="health" class="health">正在检查服务…</span></header>
+  <main>
+    <aside>
+      <div class="aside-title"><h2>巡检任务</h2><button id="refresh">刷新</button></div>
+      <div class="task-filters"><select id="filter-status"><option value="">全部状态</option><option value="draft">草稿</option><option value="observing">观测采集</option><option value="assessed">风险已评估</option><option value="repairing">维修执行</option><option value="retesting">维修复测</option><option value="reviewing">安全复核</option><option value="released">已放行</option></select><input id="filter-farm" placeholder="风电场筛选"><input id="filter-from" type="datetime-local"><input id="filter-to" type="datetime-local"></div>
+      <div id="task-list" class="task-list"></div>
+      <button id="new-task" class="primary full">＋ 创建巡检任务</button>
+    </aside>
+    <section class="workspace">
+      <div id="empty" class="empty"><div class="blade-mark">◒</div><h2>选择任务开始作业</h2><p>创建任务后，依次冻结边界、采集观测、评估风险、维修复测并签发凭证。</p></div>
+      <div id="detail" hidden>
+        <div class="task-head"><div><p id="task-code" class="eyebrow"></p><h2 id="task-title"></h2></div><span id="status" class="status"></span></div>
+        <nav id="steps"></nav>
+        <div id="notice" class="notice" hidden></div>
+        <section id="summary" class="cards"></section>
+        <section class="panel"><div class="panel-head"><h3>当前环节操作</h3><span id="version"></span></div><div id="action"></div></section>
+        <section class="panel"><div class="panel-head"><h3>证据与审计</h3><button id="audit-btn">查看审计轨迹</button></div><div id="evidence"></div></section>
+      </div>
+    </section>
+  </main>
+  <dialog id="create-dialog"><form id="create-form"><div class="dialog-head"><h2>创建巡检任务</h2><button type="button" data-close>×</button></div><label>风电场<input name="wind_farm" required placeholder="如：海岬一号风场"></label><label>风机编号<input name="turbine_code" required placeholder="如：T-17"></label><label>叶片数量<input name="blade_count" type="number" min="1" max="9" value="3" required></label><div class="grid2"><label>巡检开始<input name="start" type="datetime-local" required></label><label>巡检结束<input name="end" type="datetime-local" required></label></div><label>建案人员<input name="created_by" required></label><button class="primary" type="submit">创建草稿</button></form></dialog>
+  <script src="/assets/app.js"></script>
+</body>
+</html>
