@@ -16,11 +16,23 @@ type Service struct {
 	repo       store.Repository
 	engine     *assessment.Engine
 	comparator *assessment.Comparator
-	mu         sync.Mutex
+	createMu   sync.Mutex
+	gatesMu    sync.Mutex
+	taskGates  map[string]*taskGate
+}
+
+type taskGate struct {
+	token chan struct{}
+	users int
 }
 
 func New(repo store.Repository) *Service {
-	return &Service{repo: repo, engine: assessment.NewEngine(), comparator: assessment.NewComparator()}
+	return &Service{
+		repo:       repo,
+		engine:     assessment.NewEngine(),
+		comparator: assessment.NewComparator(),
+		taskGates:  make(map[string]*taskGate),
+	}
 }
 func (s *Service) Repository() store.Repository { return s.repo }
 func newID(prefix string) string {
@@ -33,6 +45,37 @@ func newID(prefix string) string {
 func response(v any) []byte { b, _ := json.Marshal(v); return b }
 func event(taskID, typ, actor string, version int64, payload any) (domain.Event, error) {
 	return domain.NewEvent(newID("evt"), taskID, typ, actor, version, payload)
+}
+
+func (s *Service) lockTask(ctx context.Context, id string) (func(), error) {
+	s.gatesMu.Lock()
+	gate := s.taskGates[id]
+	if gate == nil {
+		gate = &taskGate{token: make(chan struct{}, 1)}
+		s.taskGates[id] = gate
+	}
+	gate.users++
+	s.gatesMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		s.gatesMu.Lock()
+		gate.users--
+		if gate.users == 0 {
+			delete(s.taskGates, id)
+		}
+		s.gatesMu.Unlock()
+		return nil, err
+	}
+	gate.token <- struct{}{}
+	return func() {
+		<-gate.token
+		s.gatesMu.Lock()
+		gate.users--
+		if gate.users == 0 {
+			delete(s.taskGates, id)
+		}
+		s.gatesMu.Unlock()
+	}, nil
 }
 
 func (s *Service) List(ctx context.Context, filters ...store.TaskListFilter) ([]domain.InspectionTask, error) {
@@ -57,8 +100,8 @@ func (s *Service) Audit(ctx context.Context, id string) ([]domain.Event, error) 
 }
 
 func (s *Service) CreateTask(ctx context.Context, r CreateTaskRequest) (store.TaskBundle, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
 	if cached, ok, err := s.repo.Idempotent(ctx, r.IdempotencyKey); err != nil {
 		return store.TaskBundle{}, err
 	} else if ok {
@@ -112,8 +155,11 @@ func save(ctx context.Context, repo store.Repository, b store.TaskBundle, e doma
 }
 
 func (s *Service) SetZones(ctx context.Context, id string, r SetZonesRequest) (store.TaskBundle, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockTask(ctx, id)
+	if err != nil {
+		return store.TaskBundle{}, err
+	}
+	defer unlock()
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
@@ -155,8 +201,11 @@ func (s *Service) SetZones(ctx context.Context, id string, r SetZonesRequest) (s
 }
 
 func (s *Service) AddObservation(ctx context.Context, id string, r AddObservationRequest) (store.TaskBundle, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	unlock, err := s.lockTask(ctx, id)
+	if err != nil {
+		return store.TaskBundle{}, err
+	}
+	defer unlock()
 	b, err := loadForWrite(ctx, s.repo, id, r.ExpectedVersion)
 	if err != nil {
 		return b, err
