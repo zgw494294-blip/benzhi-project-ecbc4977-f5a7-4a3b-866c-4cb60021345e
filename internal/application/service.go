@@ -17,10 +17,17 @@ type Service struct {
 	engine     *assessment.Engine
 	comparator *assessment.Comparator
 	mu         sync.Mutex
+	cacheMu    sync.RWMutex
+	released   map[string]store.TaskBundle
 }
 
 func New(repo store.Repository) *Service {
-	return &Service{repo: repo, engine: assessment.NewEngine(), comparator: assessment.NewComparator()}
+	return &Service{
+		repo:       repo,
+		engine:     assessment.NewEngine(),
+		comparator: assessment.NewComparator(),
+		released:   make(map[string]store.TaskBundle),
+	}
 }
 func (s *Service) Repository() store.Repository { return s.repo }
 func newID(prefix string) string {
@@ -50,7 +57,22 @@ func (s *Service) ListFiltered(ctx context.Context, filter store.TaskListFilter)
 	return s.repo.ListTasks(ctx)
 }
 func (s *Service) Get(ctx context.Context, id string) (store.TaskBundle, error) {
-	return s.repo.LoadTask(ctx, id)
+	s.cacheMu.RLock()
+	b, ok := s.released[id]
+	s.cacheMu.RUnlock()
+	if ok {
+		return b, nil
+	}
+	b, err := s.repo.LoadTask(ctx, id)
+	if err != nil {
+		return store.TaskBundle{}, err
+	}
+	if b.Task.Status == domain.StatusReleased {
+		s.cacheMu.Lock()
+		s.released[id] = b
+		s.cacheMu.Unlock()
+	}
+	return b, nil
 }
 func (s *Service) Audit(ctx context.Context, id string) ([]domain.Event, error) {
 	return s.repo.Events(ctx, id)
