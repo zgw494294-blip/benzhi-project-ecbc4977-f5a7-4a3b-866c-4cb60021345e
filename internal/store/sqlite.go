@@ -13,6 +13,8 @@ import (
 
 type SQLite struct{ db *sql.DB }
 
+var loadTaskStatement *sql.Stmt
+
 func Open(path string) (*SQLite, error) {
 	if path == "" {
 		path = "bladeready.db"
@@ -38,10 +40,23 @@ func Open(path string) (*SQLite, error) {
 		db.Close()
 		return nil, err
 	}
+	if loadTaskStatement != nil {
+		_ = loadTaskStatement.Close()
+	}
+	loadTaskStatement, err = db.PrepareContext(ctx, "SELECT snapshot FROM tasks WHERE id=?")
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("准备任务查询: %w", err)
+	}
 	return s, nil
 }
 
-func (s *SQLite) Close() error { return s.db.Close() }
+func (s *SQLite) Close() error {
+	if loadTaskStatement != nil {
+		_ = loadTaskStatement.Close()
+	}
+	return s.db.Close()
+}
 func (s *SQLite) Check(ctx context.Context) error {
 	var result string
 	if err := s.db.QueryRowContext(ctx, "PRAGMA integrity_check").Scan(&result); err != nil {
@@ -100,7 +115,7 @@ func (s *SQLite) CreateTask(ctx context.Context, task domain.InspectionTask, eve
 
 func (s *SQLite) LoadTask(ctx context.Context, id string) (TaskBundle, error) {
 	var raw []byte
-	err := s.db.QueryRowContext(ctx, "SELECT snapshot FROM tasks WHERE id=?", id).Scan(&raw)
+	err := loadTaskStatement.QueryRowContext(ctx, id).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return TaskBundle{}, domain.ErrNotFound
 	}
