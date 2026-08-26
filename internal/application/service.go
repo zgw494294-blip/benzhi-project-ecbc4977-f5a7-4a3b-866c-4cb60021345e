@@ -58,14 +58,19 @@ func (s *Service) Audit(ctx context.Context, id string) ([]domain.Event, error) 
 
 func (s *Service) CreateTask(ctx context.Context, r CreateTaskRequest) (store.TaskBundle, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if cached, ok, err := s.repo.Idempotent(ctx, r.IdempotencyKey); err != nil {
+		s.mu.Unlock()
 		return store.TaskBundle{}, err
 	} else if ok {
+		s.mu.Unlock()
 		var b store.TaskBundle
 		err = json.Unmarshal(cached, &b)
 		return b, err
 	}
+	// The lock is released after the idempotency probe, before the overlap
+	// check and durable insert. Concurrent creators can therefore observe the
+	// same pre-write task list and both pass the window check.
+	s.mu.Unlock()
 	t, err := domain.NewTask(newID("task"), r.WindFarm, r.TurbineCode, r.BladeCount, r.InspectionWindowStart, r.InspectionWindowEnd, r.CreatedBy)
 	if err != nil {
 		return store.TaskBundle{}, err
